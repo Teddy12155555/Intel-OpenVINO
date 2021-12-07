@@ -1,21 +1,18 @@
 import os
-import sys
-import argparse
 import copy
-import pickle
+import timeit
+import logging
 
 import cv2
-import xml.etree.ElementTree as et
-
 import numpy as np
+import matplotlib.pyplot as plt
+import xml.etree.ElementTree as et
 
 from openvino.inference_engine import IECore
 
-import matplotlib.pyplot as plt
-
-import timeit
-
 MODEL_PATH = 'model/'
+DEVICE = 'CPU'
+logging.basicConfig(level=logging.DEBUG,format='[%(levelname)s] %(message)s',handlers=[logging.FileHandler('log.txt','w','utf-8')])
 
 def splitFileName(file):
     dirname, filename = os.path.split(file)
@@ -33,7 +30,6 @@ def readBIN(model):
         weight = f.read()
     return weight
 
-
 def findNodeFromXML(xmltree, nodeid):
     root = xmltree.getroot()
     layers = root.find('layers')
@@ -41,7 +37,6 @@ def findNodeFromXML(xmltree, nodeid):
         if int(layer.attrib['id']) == nodeid:
             return layer
     return None
-
 
 def modifyXMLForFeatureVectorProbing(xmltree, nodeid):
     xmlcopy = copy.deepcopy(xmltree)
@@ -75,33 +70,14 @@ def modifyXMLForFeatureVectorProbing(xmltree, nodeid):
     # return the modified XML and the name of the target node (specified by 'nodeid')
     return xmlcopy, layer.attrib['name']
 
-
-def prepareInputs(net_inputs, fn):
-    input_data = {}
-
-    input_blob_names  = list(net_inputs.keys())
-
-    input0Name = input_blob_names[0]
-    input0Info = net_inputs[input0Name]
-    N,C,H,W = input0Info.tensor_desc.dims
-    img = cv2.imread(fn)    # default = image.jpg
-    img = cv2.resize(img, (W, H))
-    img = img.transpose((2, 0, 1))
-    img = img.reshape((1, C, H, W))
-    input_data[input0Name] = img
-
-    print(input_data)
-    return input_data
-
-
 def product(lis):
-        if len(lis) == 0:
-            return 0
-        else:
-            res = 1
-            for x in lis:
-                res *= x
-            return res
+    if len(lis) == 0:
+        return 0
+    else:
+        res = 1
+        for x in lis:
+            res *= x
+        return res
 
 def calc_rf(f, stride):
     rf = []
@@ -118,7 +94,7 @@ def calc_l_star(template, rf):
     l_star = max(l - k, 1)
     return l_star
 
-def hook(target_layer, image):
+def hook(target_layer, image, IE):
     for layer in layers.findall('layer'):
         nodeid = int(layer.attrib['id'])
         nodetype = layer.attrib['type']
@@ -128,38 +104,40 @@ def hook(target_layer, image):
         if nodeName != names[target_layer]:
             continue
         if not layer.find('output') is None:
-
             outputport = layer.find('output').find('port')
-            proc = outputport.attrib['precision']
             dims = []
             for dim in outputport.findall('dim'):                       # extract shape information
                 dims.append(dim.text)
 
             modifiedXML, targetNodeName = modifyXMLForFeatureVectorProbing(originalXML, nodeid)
             XMLstr = et.tostring(modifiedXML.getroot())
-            print('{} : {}'.format(nodeid, targetNodeName))
 
-            net = ie.read_network(XMLstr, weight, init_from_buffer=True)
-            
-            # Reshape
+            readNet_start = timeit.default_timer()
+            net = IE.read_network(XMLstr, weight, init_from_buffer=True)
+            readNet_end = timeit.default_timer()
+            logging.info(f'Network Reading Time : {readNet_end - readNet_start}')
+
+            # Reshape Feature
             input_blob = next(iter(net.inputs))
-            out_blob = next(iter(net.outputs))
+
             n, c, h, w = net.input_info[input_blob].input_data.shape
             c_img, h_img, w_img  = image.shape
-            print(h_img, w_img)
             net.reshape({input_blob: (n, c, h_img, w_img)})
             
             try:
-                exenet = ie.load_network(net, 'CPU')
+                loadNet_start = timeit.default_timer()
+                exenet = IE.load_network(net, DEVICE)
+                loadNet_end = timeit.default_timer()
+                logging.info(f'Network Loading Time : {loadNet_end - loadNet_start}')
             except RuntimeError:
-                #et.dump(modifiedXML)
                 print('*** RuntimeError: load_network() -- Skip node \'{}\' - \'{}\''.format(targetNodeName, nodetype))
                 continue
             
-            
-            #inputs = prepareInputs(net.input_info, 'dog.jpg')
+            ifer_start = timeit.default_timer()
             res = exenet.infer(inputs={input_blob: image})[nodeName]
-            #print(nodeName, res)
+            ifer_end = timeit.default_timer()
+            logging.info(f'IE Inferencing Time : Image:({h_img,w_img}) -> {ifer_end - ifer_start}')
+
             del exenet
             del net
             
@@ -205,23 +183,14 @@ def nms(dets, scores, thresh):
 
 if __name__ == '__main__':
     all_start = timeit.default_timer()
-    load_start = timeit.default_timer()
     originalXML = readXML(MODEL_PATH + 'custom_vgg16.xml')
     weight = readBIN(MODEL_PATH + 'custom_vgg16.xml')
-    load_end = timeit.default_timer()
-    print('Model Loading Time : ', load_end - load_start)
-    feature_vectors = {}
-    ie = IECore()
-    root = originalXML.getroot()
-    layers = root.find('layers')
 
-    print('node# : nodeName')
     f = []
     strides = []
     names = []
     feature_vectors = {}
 
-    ie = IECore()
     root = originalXML.getroot()
     layers = root.find('layers')
     for layer in layers.findall('layer'):
@@ -247,34 +216,30 @@ if __name__ == '__main__':
         if nodetype in ['Const']: # , 'ShapeOf', 'Convert', 'StridedSlice', 'PriorBox']:
             #print(nodetype)
             continue
-            
-    print(f)
-    print(strides)
-    print(names)
-
 
     rf = np.array(calc_rf(f, strides))
-    print(rf)
 
-    sample_raw = cv2.imread('sample1.jpg')
+    sample_raw = cv2.imread('./data/sample1.jpg')
     sample_height, sample_width, sample_channels = sample_raw.shape
-    print(sample_height, sample_width, sample_channels)
     sample = sample_raw.transpose((2, 0, 1))
 
-    template_raw = cv2.imread('template1.png')
+    template_raw = cv2.imread('./data/template1.png')
     template_height, template_width, template_channels = template_raw.shape
-    print(template_height, template_width, template_channels)
     template = template_raw.transpose((2, 0, 1))
 
     l_star = calc_l_star(template, rf)
     print('Target Layer(L*):',l_star)
     
+    # Inference
+    ie_start = timeit.default_timer()
+    IE = IECore()
+    ie_end = timeit.default_timer()
+    logging.info(f'IE Core Loading Time : {ie_end - ie_start}')
+    
     fea_start = timeit.default_timer()
-    F = hook(l_star, template).astype(np.float32)
-    print(F.shape)
-
-    M = hook(l_star, sample).astype(np.float32)
-    print(M.shape)
+    F = hook(l_star, template, IE).astype(np.float32)
+    M = hook(l_star, sample, IE).astype(np.float32)
+   
     fea_stop = timeit.default_timer()
     print('Feature Extration Time ：', fea_stop - fea_start)
     ncc_start = timeit.default_timer()
@@ -345,4 +310,6 @@ if __name__ == '__main__':
     all_stop = timeit.default_timer()
 
     print('All : ', all_stop - all_start)
-    cv2.imwrite("VGG_RESULT.jpg", res_img)
+    logging.info(f'Execution Time : {all_stop - all_start}')
+    
+    cv2.imwrite("RESULT.jpg", res_img)
