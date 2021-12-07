@@ -10,7 +10,7 @@ import xml.etree.ElementTree as et
 
 from openvino.inference_engine import IECore
 
-MODEL_PATH = 'model/'
+MODEL_PATH = 'model/FP16/'
 DEVICE = 'CPU'
 logging.basicConfig(level=logging.DEBUG,format='[%(levelname)s] %(message)s',handlers=[logging.FileHandler('log.txt','w','utf-8')])
 

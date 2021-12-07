@@ -1,8 +1,8 @@
-[INFO] IE Core Loading Time : 0.0006052909884601831
-[INFO] Network Reading Time : 0.023402472026646137
-[INFO] Network Loading Time : 0.02593920094659552
-[INFO] IE Inferencing Time : Image:((40, 40)) -> 0.011842353036627173
-[INFO] Network Reading Time : 0.01985823200084269
-[INFO] Network Loading Time : 0.019043290987610817
-[INFO] IE Inferencing Time : Image:((225, 384)) -> 0.06131959898630157
-[INFO] Execution Time : 0.545131515013054
+[INFO] IE Core Loading Time : 0.0006418149987439392
+[INFO] Network Reading Time : 0.01473706700016919
+[INFO] Network Loading Time : 0.0599677160007559
+[INFO] IE Inferencing Time : Image:((40, 40)) -> 0.004211085000861203
+[INFO] Network Reading Time : 0.009448184999200748
+[INFO] Network Loading Time : 0.05433995900057198
+[INFO] IE Inferencing Time : Image:((225, 384)) -> 0.11610226199991303
+[INFO] Execution Time : 0.6191508569991129

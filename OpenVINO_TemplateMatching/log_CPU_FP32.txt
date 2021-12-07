@@ -1,0 +1,8 @@
+[INFO] IE Core Loading Time : 0.000612406998698134
+[INFO] Network Reading Time : 0.021861491999516147
+[INFO] Network Loading Time : 0.026872481001191773
+[INFO] IE Inferencing Time : Image:((40, 40)) -> 0.004510498998570256
+[INFO] Network Reading Time : 0.018562774001111393
+[INFO] Network Loading Time : 0.02227451599901542
+[INFO] IE Inferencing Time : Image:((225, 384)) -> 0.11658859100134578
+[INFO] Execution Time : 0.5811602379999385
